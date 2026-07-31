@@ -1,36 +1,50 @@
-# l2tp-egress-router
+# xray-egress-router
 
-L2TP egress routing overlay for Debian 12. It keeps the existing pure-L2TP
-`xl2tpd` installation intact and adds Xray-core v26.6.27 TPROXY routing,
-Shadowsocks/HTTP/SOCKS5 egress management, source-IP diagnostics, and a
-FastAPI web console.
+IPv4 source-based egress routing for Panabit L2TP ingress traffic. The router
+keeps the pure-L2TP server as the ingress and sends selected LAN source CIDRs
+through Xray TPROXY outbounds.
 
-## Current status
+## Scope
 
-- Existing `xl2tpd` configuration is treated as upstream-owned and is not overwritten.
-- Each outbound pure-L2TP egress runs in its own network namespace with a
-  dedicated veth, xl2tpd process, control socket, route table, and state file;
-  the existing LNS process is never reused or restarted.
-- Xray version is pinned to `26.6.27`.
-- PPP reconnect hooks restore source-CIDR routes automatically.
-- The web panel can export/import a validated `l2er-config.json` backup. It contains routing state and egress credentials, but never admin credentials or sessions.
-- For shell-based migration, use `scripts/l2er-config-backup.sh backup <file.tar.gz>` and `restore <file.tar.gz>`; restore creates a timestamped copy of the current state first.
-- On a new Debian/Ubuntu VPS, run `curl -fsSL https://raw.githubusercontent.com/asd5889921/l2tp-egress-router/main/scripts/bootstrap.sh | bash`. The installer first creates a new pure-L2TP LNS for Panabit, then installs this router. It asks only for L2TP server settings; source LAN CIDRs are added later in the Web panel.
-- To remove the application from a test VPS, run `curl -fsSL https://raw.githubusercontent.com/asd5889921/l2tp-egress-router/main/scripts/uninstall.sh | bash`. Add `--purge-l2tp` only when the VPS is dedicated to this installation and the xl2tpd/ppp service should also be removed.
-- Web console supports egress editing, SS URI parsing, bindings, snapshots,
-  rollback, service status, and connectivity tests.
-- Connection diagnostics retain only private IPv4 source samples in memory for
-  five minutes (at most 1000 samples per interface). Xray runs at error log
-  level by default, and watchdog errors rotate daily with seven days retained.
+- Xray outbounds only: Shadowsocks, SOCKS5, and HTTP.
+- No outbound L2TP client, network namespace, PPP egress, or L2TP policy table.
+- Existing Panabit-facing `xl2tpd` remains the ingress and is not reused as an
+  outbound client.
+- TCP and UDP IPv4 TPROXY with automatic port and fwmark allocation.
+- PPP reconnect hooks restore source-network return routes automatically.
+- Web configuration, connectivity tests, transactional rollback, import/export,
+  service status, and log retention controls.
+- IPv6 is not forwarded by this routing layer.
 
-## Continue development
+## Install
+
+On a new Debian/Ubuntu VPS:
 
 ```bash
-git clone https://github.com/asd5889921/l2tp-egress-router.git
-cd l2tp-egress-router
+curl -fsSL https://raw.githubusercontent.com/asd5889921/xray-egress-router/main/scripts/bootstrap.sh | bash
 ```
 
-The currently deployed VPS is separate from this source repository. Review
-the existing project files and deployment notes before changing firewall or
-PPP behavior.
+The installer can create the pure-L2TP server used by Panabit, then installs the
+Xray routing layer under isolated project paths:
 
+- Application: `/opt/xray-egress-router`
+- Configuration: `/etc/xray-egress-router`
+- Runtime state: `/run/xray-egress-router`
+- Services: `xrer-xray`, `xrer-web`, `xrer-watchdog`
+
+The L2TP server is only an ingress. Add source LAN CIDRs and Xray outbounds from
+the Web panel after installation.
+
+## Development
+
+```bash
+git clone https://github.com/asd5889921/xray-egress-router.git
+cd xray-egress-router
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e '.[test]'
+pytest -q
+```
+
+This repository was split from `l2tp-egress-router` so removing outbound L2TP
+does not alter the stable original project.

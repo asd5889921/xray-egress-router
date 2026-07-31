@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>L2TP Egress Router</title><link rel="stylesheet" href="/static/styles.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xray Egress Router</title><link rel="stylesheet" href="/static/styles.css"></head>
 <body>
   <div id="toast" role="status"></div>
   <main>
-    <header><div><h1>L2TP Egress Router</h1><p>按来源网段管理安全的出口与隧道分流</p></div><button id="logout" class="secondary hidden">退出</button></header>
+    <header><div><h1>Xray Egress Router</h1><p>按 Panabit 来源网段管理 Xray 出口分流</p></div><button id="logout" class="secondary hidden">退出</button></header>
     <section id="auth" class="panel narrow"><h2 id="auth-title">登录</h2><form id="auth-form"><label>用户名<input id="username" required autocomplete="username"></label><label>密码<input id="password" type="password" required autocomplete="current-password"></label><button type="submit">继续</button></form></section>
     <div id="dashboard" class="hidden">
       <section id="pending" class="warning hidden"><strong>网络变更等待确认</strong><span id="countdown"></span><div><button id="confirm">确认保留</button><button id="rollback" class="danger">立即回滚</button></div></section>

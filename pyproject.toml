@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "l2tp-egress-router"
+name = "xray-egress-router"
 version = "0.1.0"
-description = "Non-invasive Xray TPROXY egress routing layered on an existing xl2tpd server"
+description = "Xray TPROXY egress routing layered on an existing Panabit L2TP ingress"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
@@ -19,9 +19,9 @@ dependencies = [
 test = ["httpx>=0.27,<1", "pytest>=8,<9", "pytest-asyncio>=0.23,<1"]
 
 [project.scripts]
-l2er-web = "l2tp_multi_egress.main:run"
-l2er-watchdog = "l2tp_multi_egress.watchdog:run"
-l2er-ppp-event = "l2tp_multi_egress.ppp_event:run"
+xrer-web = "l2tp_multi_egress.main:run"
+xrer-watchdog = "l2tp_multi_egress.watchdog:run"
+xrer-ppp-event = "l2tp_multi_egress.ppp_event:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

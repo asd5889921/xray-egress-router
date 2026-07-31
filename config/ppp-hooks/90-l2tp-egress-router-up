@@ -1,6 +1,0 @@
-#!/bin/sh
-# Install as /etc/ppp/ip-up.d/90-l2tp-egress-router. Debian's stock ip-up
-# executes this directory; no change to options.xl2tpd is required.
-set -eu
-export PEERNAME="${PEERNAME:-${PPP_PEERNAME:-unknown}}"
-exec /opt/l2tp-egress-router/.venv/bin/l2er-ppp-event up "$PPP_IFACE" "${IPLOCAL:-}" "${IPREMOTE:-}"

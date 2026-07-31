@@ -55,7 +55,7 @@ def download_and_install(destination: Path = Path("/usr/local/bin/xray")) -> str
     the executable's own version output must both pass before atomic replace.
     """
     asset = release_asset()
-    with tempfile.TemporaryDirectory(prefix="l2er-xray-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="xrer-xray-") as temporary:
         root = Path(temporary)
         archive = root / asset
         digest_file = root / f"{asset}.dgst"

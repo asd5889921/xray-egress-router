@@ -13,7 +13,6 @@ from l2tp_multi_egress.diagnostics import SourceDiagnostics
 from l2tp_multi_egress.main import create_app
 from l2tp_multi_egress.models import AppState, Binding, Egress, ProxyType
 from l2tp_multi_egress.network import iptables_restore_script
-from l2tp_multi_egress.l2tp import L2TPManager
 from l2tp_multi_egress.settings import Settings
 from l2tp_multi_egress.ss_uri import parse_ss_uri
 from l2tp_multi_egress.transaction import TransactionManager
@@ -60,36 +59,10 @@ def test_generated_xray_and_iptables_are_udp_tproxy_only():
     assert "MASQUERADE" not in rules and "SNAT" not in rules and "REDIRECT" not in rules
 
 
-def test_l2tp_model_and_isolated_client_config(tmp_path):
-    egress = Egress(id="jp-l2tp", name="Japan L2TP", type=ProxyType.L2TP, address="203.0.113.10", port=1701, username="panabit", password="secret")
-    manager = L2TPManager(settings(tmp_path))
-    config = manager.write_configs(AppState(egresses=[egress]))
-    text = config.read_text()
-    assert "[lac jp-l2tp]" in text
-    assert "lns = 203.0.113.10" in text
-    assert "noauth" in (tmp_path / "etc" / "l2tp" / "jp-l2tp" / "ppp.options").read_text()
+def test_only_xray_egress_types_are_accepted():
+    assert {item.value for item in ProxyType} == {"shadowsocks", "socks", "http"}
     with pytest.raises(ValidationError):
-        Egress(id="bad", name="bad", type=ProxyType.L2TP, address="x", port=1700, username="u", password="p")
-
-
-def test_l2tp_binding_bypasses_xray_tproxy():
-    egress = Egress(id="l2", name="L2TP", type=ProxyType.L2TP, address="203.0.113.10", port=1701, username="u", password="p")
-    state = AppState(egresses=[egress], bindings=[Binding(id="b", source_cidr="192.168.50.0/24", egress_id="l2", tproxy_port=12010, mark=32780)])
-    rules = iptables_restore_script(state)
-    assert "-A L2ER_TPROXY -i ppp+ -s 192.168.50.0/24 -j RETURN" in rules
-
-
-def test_l2tp_runtime_isolated_per_egress(tmp_path):
-    first = Egress(id="jp-one", name="Japan 1", type=ProxyType.L2TP, address="203.0.113.10", port=1701, username="u", password="p")
-    second = Egress(id="us-two", name="US 2", type=ProxyType.L2TP, address="203.0.113.11", port=1701, username="u", password="p")
-    manager = L2TPManager(settings(tmp_path))
-    manager.apply(AppState(egresses=[first, second]))
-    assert manager.namespace_name(first.id) != manager.namespace_name(second.id)
-    assert manager.host_interface(first.id) != manager.host_interface(second.id)
-    assert (tmp_path / "etc" / "l2tp" / "jp-one" / "xl2tpd.conf").is_file()
-    hook = (tmp_path / "etc" / "l2tp" / "jp-one" / "ip-up").read_text()
-    assert f"L2ER_NAMESPACE={manager.namespace_name(first.id)}" in hook
-    assert "systemctl" not in hook
+        Egress.model_validate({"id": "bad", "name": "bad", "type": "l2tp", "address": "x", "port": 1701})
 
 
 def test_nat_diagnostic_requires_peer_concentration(tmp_path):
@@ -179,7 +152,7 @@ def test_web_config_export_import_is_validated(tmp_path):
         headers = {"X-CSRF-Token": csrf}
         exported = client.get("/api/config/export")
         assert exported.status_code == 200
-        assert exported.headers["content-disposition"].endswith('l2er-config.json"')
+        assert exported.headers["content-disposition"].endswith('xrer-config.json"')
         backup = exported.json()
         backup["state"]["egresses"] = []
         backup["state"]["bindings"] = []

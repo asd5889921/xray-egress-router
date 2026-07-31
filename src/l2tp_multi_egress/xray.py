@@ -10,16 +10,16 @@ from .settings import Settings
 from .storage import atomic_write
 
 
-API_TAG = "l2er-api"
+API_TAG = "xrer-api"
 REQUIRED_XRAY_VERSION = "26.6.27"
 
 
 def inbound_tag(binding: Binding) -> str:
-    return f"l2me-in-{binding.id}"
+    return f"xrer-in-{binding.id}"
 
 
 def outbound_tag(binding: Binding) -> str:
-    return f"l2me-out-{binding.id}"
+    return f"xrer-out-{binding.id}"
 
 
 def make_inbound(binding: Binding) -> dict:
@@ -57,16 +57,13 @@ def make_outbound(binding: Binding, egress: Egress) -> dict:
         if egress.username:
             server["users"] = [{"user": egress.username, "pass": egress.password or ""}]
         settings, protocol = {"servers": [server]}, "http"
-    elif egress.type == ProxyType.L2TP:
-        settings, protocol = {"domainStrategy": "UseIPv4"}, "freedom"
     else:
         raise ValueError(f"unsupported egress type: {egress.type}")
-    sockopt = {"mark": 0x8000 if egress.type == ProxyType.L2TP else 255}
     return {
         "tag": tag,
         "protocol": protocol,
         "settings": settings,
-        "streamSettings": {"sockopt": sockopt},
+        "streamSettings": {"sockopt": {"mark": 255}},
         "mux": {"enabled": False},
     }
 
@@ -94,7 +91,7 @@ def build_config(state: AppState, api_address: str, loglevel: str = "error") -> 
         config["fakedns"] = [{"ipPool": "198.18.0.0/15", "poolSize": 65535}]
         config["dns"] = {"servers": ["fakedns"]}
         for item in inbounds:
-            if item.get("tag", "").startswith("l2me-in-"):
+            if item.get("tag", "").startswith("xrer-in-"):
                 item["sniffing"]["destOverride"].append("fakedns")
     return config
 
@@ -149,7 +146,7 @@ class XrayManager:
 
     def restart_with(self, state: AppState) -> None:
         self.write_config(state)
-        result = self._run(["systemctl", "restart", "xray"], timeout=30)
+        result = self._run(["systemctl", "restart", "xrer-xray"], timeout=30)
         if result.returncode:
             raise RuntimeError(f"切换 FakeDNS 时重启 Xray 失败: {(result.stderr or result.stdout).strip()}")
         if not self.settings.dry_run:

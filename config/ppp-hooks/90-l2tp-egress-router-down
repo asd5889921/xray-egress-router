@@ -1,4 +1,0 @@
-#!/bin/sh
-# Install as /etc/ppp/ip-down.d/90-l2tp-egress-router.
-set -eu
-exec /opt/l2tp-egress-router/.venv/bin/l2er-ppp-event down "$PPP_IFACE" "${IPLOCAL:-}" "${IPREMOTE:-}"

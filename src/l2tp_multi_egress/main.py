@@ -71,12 +71,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         task.cancel()
 
-    app = FastAPI(title="l2tp-egress-router", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="xray-egress-router", version="0.1.0", lifespan=lifespan)
     static_path = files("l2tp_multi_egress").joinpath("static")
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
     def session(request: Request) -> dict:
-        token = request.cookies.get("l2er_session", "")
+        token = request.cookies.get("xrer_session", "")
         payload = auth.parse_session(token)
         if not payload:
             raise HTTPException(401, "请先登录")
@@ -127,12 +127,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(401, "用户名或密码错误")
         attempts.clear()
         token, csrf = auth.create_session(data.username)
-        response.set_cookie("l2er_session", token, httponly=True, secure=False, samesite="strict", max_age=43200)
+        response.set_cookie("xrer_session", token, httponly=True, secure=False, samesite="strict", max_age=43200)
         return {"ok": True, "csrf": csrf}
 
     @app.post("/api/logout")
     async def logout(response: Response, _: dict = Depends(mutation_session)) -> dict:
-        response.delete_cookie("l2er_session")
+        response.delete_cookie("xrer_session")
         return {"ok": True}
 
     @app.get("/api/state")
@@ -144,12 +144,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def export_config(_: dict = Depends(session)) -> JSONResponse:
         state = store.load()
         payload = {
-            "format": "l2er-config",
+            "format": "xrer-config",
             "version": 1,
             "exported_at": time.time(),
             "state": state.model_dump(mode="json"),
         }
-        return JSONResponse(payload, headers={"Content-Disposition": 'attachment; filename="l2er-config.json"'})
+        return JSONResponse(payload, headers={"Content-Disposition": 'attachment; filename="xrer-config.json"'})
 
     @app.post("/api/config/import")
     async def import_config(data: ImportRequest, _: dict = Depends(mutation_session)) -> dict:

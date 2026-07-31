@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPO_URL="${L2ER_REPO_URL:-https://github.com/asd5889921/l2tp-egress-router.git}"
-BRANCH="${L2ER_BRANCH:-main}"
-APP_DIR="${L2ER_APP_DIR:-/opt/l2tp-egress-router}"
-CONFIG_DIR="${L2ER_CONFIG_DIR:-/etc/l2tp-egress-router}"
-RUN_DIR="${L2ER_RUN_DIR:-/run/l2tp-egress-router}"
-L2TP_INSTALLER_URL="${L2ER_L2TP_INSTALLER_URL:-https://raw.githubusercontent.com/asd5889921/l2tp-vpn-installer/main/bootstrap.sh}"
-UNINSTALL_URL="${L2ER_UNINSTALL_URL:-https://raw.githubusercontent.com/asd5889921/l2tp-egress-router/main/scripts/uninstall.sh}"
+REPO_URL="${XRER_REPO_URL:-https://github.com/asd5889921/xray-egress-router.git}"
+BRANCH="${XRER_BRANCH:-main}"
+APP_DIR="${XRER_APP_DIR:-/opt/xray-egress-router}"
+CONFIG_DIR="${XRER_CONFIG_DIR:-/etc/xray-egress-router}"
+RUN_DIR="${XRER_RUN_DIR:-/run/xray-egress-router}"
+L2TP_INSTALLER_URL="${XRER_L2TP_INSTALLER_URL:-https://raw.githubusercontent.com/asd5889921/l2tp-vpn-installer/main/bootstrap.sh}"
+UNINSTALL_URL="${XRER_UNINSTALL_URL:-https://raw.githubusercontent.com/asd5889921/xray-egress-router/main/scripts/uninstall.sh}"
 
 [[ "$(id -u)" == 0 ]] || { echo "请使用 root 用户运行。" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "仅支持 Debian/Ubuntu。" >&2; exit 1; }
 [[ -r /dev/tty && -w /dev/tty ]] || { echo "需要交互式终端。" >&2; exit 1; }
 
+if [[ -d /opt/l2tp-egress-router || -f /etc/systemd/system/l2er-web.service ]]; then
+  echo "检测到原 l2tp-egress-router。两个项目不能在同一 VPS 上共用端口和 Xray。" >&2
+  echo "为保护现有稳定服务，本安装已停止；请在另一台 VPS 安装 xray-egress-router。" >&2
+  exit 1
+fi
+
 EXISTING=0
-if [[ -e /etc/xl2tpd/xl2tpd.conf || -e /etc/ppp/options.xl2tpd || -e /etc/ppp/chap-secrets || -d "$APP_DIR" || -f /etc/systemd/system/l2er-web.service ]]; then
+if [[ -e /etc/xl2tpd/xl2tpd.conf || -e /etc/ppp/options.xl2tpd || -e /etc/ppp/chap-secrets || -d "$APP_DIR" || -f /etc/systemd/system/xrer-web.service ]]; then
   EXISTING=1
-  echo "检测到已有 L2TP 或 l2tp-egress-router 安装。"
+  echo "检测到已有 L2TP 或 xray-egress-router 安装。"
   echo "1) 卸载  2) 安装/更新并保留现有 LNS  3) 取消"
   read -r -p "请选择 [1/2/3]: " ACTION </dev/tty
   if [[ "$ACTION" == "1" ]]; then
@@ -30,7 +36,7 @@ if [[ -e /etc/xl2tpd/xl2tpd.conf || -e /etc/ppp/options.xl2tpd || -e /etc/ppp/ch
 fi
 
 if [[ -f "$CONFIG_DIR/auth.json" ]]; then
-  ADMIN_USER="$(python3 -c 'import json; print(json.load(open("/etc/l2tp-egress-router/auth.json"))["username"])' 2>/dev/null || echo admin)"
+  ADMIN_USER="$(XRER_CONFIG_DIR="$CONFIG_DIR" python3 -c 'import json, os; print(json.load(open(os.path.join(os.environ["XRER_CONFIG_DIR"], "auth.json")))["username"])' 2>/dev/null || echo admin)"
   ADMIN_PASS="$(od -An -N18 -tx1 /dev/urandom | tr -d ' \n')"; ADMIN_PASSWORD_GENERATED=1; ADMIN_PASSWORD_OUTPUT="$ADMIN_PASS"
 else
 read -r -p "Web 管理员用户名 [admin]: " ADMIN_USER </dev/tty
@@ -71,7 +77,7 @@ LNS_POOL="$(awk -F= '/^[[:space:]]*ip range[[:space:]]*=/{gsub(/[[:space:]]/, ""
 L2TP_MTU="$(awk '/^[[:space:]]*mtu[[:space:]]+/{print $2; exit}' /etc/ppp/options.xl2tpd)"
 L2TP_DNS="$(awk '/^[[:space:]]*ms-dns[[:space:]]+/{if (value) value=value ", "; value=value $2} END{print value}' /etc/ppp/options.xl2tpd)"
 
-echo "第二步：安装 l2tp-egress-router。"
+echo "第二步：安装 xray-egress-router。"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y git python3 python3-venv python3-pip iproute2 iptables curl
@@ -90,10 +96,10 @@ python3 -m venv "$APP_DIR/.venv"
 
 install -d -m 700 "$CONFIG_DIR" "$RUN_DIR"
 install -d -m 755 /etc/ppp/ip-up.d /etc/ppp/ip-down.d
-install -m 755 "$APP_DIR/config/ppp-hooks/90-l2tp-egress-router-up" /etc/ppp/ip-up.d/90-l2tp-egress-router
-install -m 755 "$APP_DIR/config/ppp-hooks/90-l2tp-egress-router-down" /etc/ppp/ip-down.d/90-l2tp-egress-router
+install -m 755 "$APP_DIR/config/ppp-hooks/90-xray-egress-router-up" /etc/ppp/ip-up.d/90-xray-egress-router
+install -m 755 "$APP_DIR/config/ppp-hooks/90-xray-egress-router-down" /etc/ppp/ip-down.d/90-xray-egress-router
 
-export L2ER_CONFIG_DIR="$CONFIG_DIR" L2ER_RUN_DIR="$RUN_DIR" L2ER_XRAY_BINARY=/usr/local/bin/xray L2ER_DRY_RUN=1
+export XRER_CONFIG_DIR="$CONFIG_DIR" XRER_RUN_DIR="$RUN_DIR" XRER_XRAY_BINARY=/usr/local/bin/xray XRER_DRY_RUN=1
 "$APP_DIR/.venv/bin/python" - <<'PY'
 from l2tp_multi_egress.models import AppState
 from l2tp_multi_egress.settings import Settings
@@ -121,9 +127,9 @@ auth.initialize(os.environ["ADMIN_USER"], os.environ["ADMIN_PASS"])
 PY
 unset ADMIN_PASS ADMIN_PASS_CONFIRM
 
-cat > /etc/systemd/system/l2er-xray.service <<EOF
+cat > /etc/systemd/system/xrer-xray.service <<EOF
 [Unit]
-Description=l2tp-egress-router Xray core
+Description=xray-egress-router Xray core
 After=network-online.target
 Wants=network-online.target
 [Service]
@@ -136,37 +142,37 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
-cat > /etc/systemd/system/l2er-web.service <<EOF
+cat > /etc/systemd/system/xrer-web.service <<EOF
 [Unit]
-Description=l2tp-egress-router Web
-After=l2er-xray.service xl2tpd.service
-Requires=l2er-xray.service
+Description=xray-egress-router Web
+After=xrer-xray.service xl2tpd.service
+Requires=xrer-xray.service
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-Environment=L2ER_CONFIG_DIR=$CONFIG_DIR
-Environment=L2ER_RUN_DIR=$RUN_DIR
-Environment=L2ER_XRAY_BINARY=/usr/local/bin/xray
-Environment=L2ER_LISTEN_HOST=0.0.0.0
-Environment=L2ER_LISTEN_PORT=17890
-ExecStart=$APP_DIR/.venv/bin/l2er-web
+Environment=XRER_CONFIG_DIR=$CONFIG_DIR
+Environment=XRER_RUN_DIR=$RUN_DIR
+Environment=XRER_XRAY_BINARY=/usr/local/bin/xray
+Environment=XRER_LISTEN_HOST=0.0.0.0
+Environment=XRER_LISTEN_PORT=17890
+ExecStart=$APP_DIR/.venv/bin/xrer-web
 Restart=on-failure
 RestartSec=3
 User=root
 [Install]
 WantedBy=multi-user.target
 EOF
-cat > /etc/systemd/system/l2er-watchdog.service <<EOF
+cat > /etc/systemd/system/xrer-watchdog.service <<EOF
 [Unit]
-Description=l2tp-egress-router rollback watchdog
+Description=xray-egress-router rollback watchdog
 After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-Environment=L2ER_CONFIG_DIR=$CONFIG_DIR
-Environment=L2ER_RUN_DIR=$RUN_DIR
-Environment=L2ER_XRAY_BINARY=/usr/local/bin/xray
-ExecStart=$APP_DIR/.venv/bin/l2er-watchdog
+Environment=XRER_CONFIG_DIR=$CONFIG_DIR
+Environment=XRER_RUN_DIR=$RUN_DIR
+Environment=XRER_XRAY_BINARY=/usr/local/bin/xray
+ExecStart=$APP_DIR/.venv/bin/xrer-watchdog
 Restart=always
 RestartSec=2
 User=root
@@ -175,17 +181,17 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable l2er-xray l2er-watchdog l2er-web
+systemctl enable xrer-xray xrer-watchdog xrer-web
 # --now does not restart an already-running unit.  Updates must restart the
 # processes so they load the freshly installed Python package and static UI.
-systemctl restart l2er-xray l2er-watchdog l2er-web
+systemctl restart xrer-xray xrer-watchdog xrer-web
 SERVER_IP="$(curl --connect-timeout 5 -fsS https://api.ipify.org 2>/dev/null || true)"
 [[ -n "$SERVER_IP" ]] || SERVER_IP="$(hostname -I | awk '{print $1}')"
-SUMMARY_FILE=/root/l2er-install-summary.txt
+SUMMARY_FILE=/root/xrer-install-summary.txt
 umask 077
 {
   echo
-  echo "========== L2TP Egress Router 安装信息 =========="
+  echo "========== Xray Egress Router 安装信息 =========="
   printf '服务器地址：       %s\n' "$SERVER_IP"
   printf '服务器端口：       UDP 1701\n'
   printf 'VPN 账号：         %s\n' "$L2TP_USER"

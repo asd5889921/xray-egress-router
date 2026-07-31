@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+export PEERNAME="${PEERNAME:-${PPP_PEERNAME:-unknown}}"
+exec /opt/xray-egress-router/.venv/bin/xrer-ppp-event up "$PPP_IFACE" "${IPLOCAL:-}" "${IPREMOTE:-}"

@@ -22,7 +22,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        config_dir = Path(os.getenv("L2ER_CONFIG_DIR", "/etc/l2tp-egress-router"))
+        config_dir = Path(os.getenv("XRER_CONFIG_DIR", "/etc/xray-egress-router"))
         preferences: dict = {}
         try:
             import json
@@ -31,17 +31,17 @@ class Settings:
             pass
         return cls(
             config_dir=config_dir,
-            run_dir=Path(os.getenv("L2ER_RUN_DIR", "/run/l2tp-egress-router")),
-            xray_binary=Path(os.getenv("L2ER_XRAY_BINARY", "/usr/local/bin/xray")),
-            xray_api=os.getenv("L2ER_XRAY_API", "127.0.0.1:10085"),
-            dry_run=os.getenv("L2ER_DRY_RUN", "0") == "1",
-            listen_host=os.getenv("L2ER_LISTEN_HOST", "127.0.0.1"),
-            listen_port=int(os.getenv("L2ER_LISTEN_PORT", "17890")),
-            rollback_seconds=int(os.getenv("L2ER_ROLLBACK_SECONDS", "60")),
-            diagnostic_window_seconds=max(60, int(os.getenv("L2ER_DIAGNOSTIC_WINDOW_SECONDS", "300"))),
-            diagnostic_max_entries=max(100, int(os.getenv("L2ER_DIAGNOSTIC_MAX_ENTRIES", "1000"))),
-            xray_log_level=os.getenv("L2ER_XRAY_LOG_LEVEL", str(preferences.get("xray_log_level", "error"))).lower(),
-            log_retention_days=max(0, int(os.getenv("L2ER_LOG_RETENTION_DAYS", str(preferences.get("log_retention_days", 7))))),
+            run_dir=Path(os.getenv("XRER_RUN_DIR", "/run/xray-egress-router")),
+            xray_binary=Path(os.getenv("XRER_XRAY_BINARY", "/usr/local/bin/xray")),
+            xray_api=os.getenv("XRER_XRAY_API", "127.0.0.1:10085"),
+            dry_run=os.getenv("XRER_DRY_RUN", "0") == "1",
+            listen_host=os.getenv("XRER_LISTEN_HOST", "127.0.0.1"),
+            listen_port=int(os.getenv("XRER_LISTEN_PORT", "17890")),
+            rollback_seconds=int(os.getenv("XRER_ROLLBACK_SECONDS", "60")),
+            diagnostic_window_seconds=max(60, int(os.getenv("XRER_DIAGNOSTIC_WINDOW_SECONDS", "300"))),
+            diagnostic_max_entries=max(100, int(os.getenv("XRER_DIAGNOSTIC_MAX_ENTRIES", "1000"))),
+            xray_log_level=os.getenv("XRER_XRAY_LOG_LEVEL", str(preferences.get("xray_log_level", "error"))).lower(),
+            log_retention_days=max(0, int(os.getenv("XRER_LOG_RETENTION_DAYS", str(preferences.get("log_retention_days", 7))))),
         )
 
     @property

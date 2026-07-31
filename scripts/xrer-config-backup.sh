@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_DIR="${L2ER_CONFIG_DIR:-/etc/l2tp-egress-router}"
+CONFIG_DIR="${XRER_CONFIG_DIR:-/etc/xray-egress-router}"
 STATE_FILE="$CONFIG_DIR/state.json"
-BACKUP_DIR="${L2ER_BACKUP_DIR:-/var/backups/l2tp-egress-router}"
-PYTHON_BIN="${L2ER_PYTHON:-/opt/l2tp-egress-router/.venv/bin/python3}"
+BACKUP_DIR="${XRER_BACKUP_DIR:-/var/backups/xray-egress-router}"
+PYTHON_BIN="${XRER_PYTHON:-/opt/xray-egress-router/.venv/bin/python3}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 
 usage() { echo "Usage: $0 backup <file.tar.gz> | restore <file.tar.gz>"; exit 2; }
@@ -34,13 +34,13 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 try:
     AppState.model_validate(data)
 except ValidationError as exc:
-    raise SystemExit(f"invalid l2er state: {exc}")
+    raise SystemExit(f"invalid xrer state: {exc}")
 PY
     install -d -m 700 "$BACKUP_DIR"
     timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
     [[ -f "$STATE_FILE" ]] && cp -p "$STATE_FILE" "$BACKUP_DIR/state-before-restore-$timestamp.json"
     install -m 600 "$temporary/state.json" "$STATE_FILE"
-    systemctl restart l2er-web l2er-watchdog
+    systemctl restart xrer-web xrer-watchdog
     echo "Configuration restored. Existing admin credentials were preserved."
     ;;
   *) usage ;;

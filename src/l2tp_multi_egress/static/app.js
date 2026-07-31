@@ -1,45 +1,108 @@
-const $ = q => document.querySelector(q);
-let csrf = sessionStorage.getItem("csrf") || "", state = null, pending = null, editorEgressId = "", testResults = {};
-const esc = v => String(v ?? "").replace(/[&<>\"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-function toast(message, bad = false) { const el = $("#toast"); el.textContent = message; el.style.background = bad ? "#ba3434" : "#102b35"; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
-function errorText(detail) { if (typeof detail === "string") return detail; if (Array.isArray(detail)) return detail.map(x => typeof x === "string" ? x : `${x.loc?.join(".") || "字段"}: ${x.msg || JSON.stringify(x)}`).join("；"); return detail ? JSON.stringify(detail) : "请求失败"; }
-async function api(path, options = {}) { options.headers = {"Content-Type":"application/json", ...(options.headers || {})}; if (options.method && options.method !== "GET") options.headers["X-CSRF-Token"] = csrf; const r = await fetch(path, options); const data = await r.json().catch(() => ({})); if (!r.ok) throw Error(errorText(data.detail) || `HTTP ${r.status}`); return data; }
+const $ = (q) => document.querySelector(q);
+let csrf = sessionStorage.getItem("csrf") || "";
+let state = null;
+let pending = null;
+let editorEgressId = "";
+const testResults = {};
+
+const esc = (v) => String(v ?? "").replace(/[&<>\"']/g, (c) => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;"}[c]));
+function errorText(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map((x) => x.msg || JSON.stringify(x)).join("; ");
+  return detail ? JSON.stringify(detail) : "请求失败";
+}
+function toast(message, bad = false) {
+  const el = $("#toast");
+  el.textContent = message;
+  el.style.background = bad ? "#ba3434" : "#102b35";
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2800);
+}
+async function api(path, options = {}) {
+  options.headers = {"Content-Type":"application/json", ...(options.headers || {})};
+  if (options.method && options.method !== "GET") options.headers["X-CSRF-Token"] = csrf;
+  const response = await fetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Error(errorText(data.detail) || `HTTP ${response.status}`);
+  return data;
+}
 function showDashboard() { $("#auth").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); $("#logout").classList.remove("hidden"); refreshAll(); }
-async function bootstrap() { const info = await api("/api/bootstrap"); $("#auth-title").textContent = info.initialized ? "登录" : "初始化管理员"; if (csrf) { try { await api("/api/state"); showDashboard(); } catch (_) { sessionStorage.clear(); csrf = ""; } } }
-$("#auth-form").onsubmit = async e => { e.preventDefault(); try { const body = JSON.stringify({username:$("#username").value, password:$("#password").value}); if (!(await api("/api/bootstrap")).initialized) { await api("/api/initialize", {method:"POST", body}); toast("管理员已初始化，请登录"); return; } const r = await api("/api/login", {method:"POST", body}); csrf = r.csrf; sessionStorage.setItem("csrf", csrf); showDashboard(); } catch (err) { toast(err.message, true); } };
-$("#logout").onclick = async () => { try { await api("/api/logout", {method:"POST"}); } finally { sessionStorage.clear(); location.reload(); } };
 async function refreshAll() { await Promise.all([refreshState(), refreshConnections(), refreshSystem()]); }
-async function refreshState() { const r = await api("/api/state"); state = r.state; pending = r.pending; renderRoutes(); renderPending(); }
-function renderPending() { const box = $("#pending"); box.classList.toggle("hidden", !pending); if (pending) $("#countdown").textContent = `等待确认，${Math.max(0, Math.ceil(pending.deadline_epoch - Date.now()/1000))} 秒后回滚`; }
-$("#confirm").onclick = async () => { try { await api(`/api/transactions/${pending.id}/confirm`, {method:"POST"}); pending = null; renderPending(); toast("变更已确认"); } catch (e) { toast(e.message, true); } };
-$("#rollback").onclick = async () => { try { await api(`/api/transactions/${pending.id}/rollback`, {method:"POST"}); await refreshState(); toast("已回滚"); } catch (e) { toast(e.message, true); } };
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => { document.querySelectorAll("nav button").forEach(x => x.classList.toggle("active", x === b)); document.querySelectorAll(".tab").forEach(x => x.classList.toggle("hidden", x.id !== b.dataset.tab)); });
-async function refreshConnections() { try { const rows = await api("/api/connections"); $("#connection-list").innerHTML = rows.length ? `<table><thead><tr><th>接口</th><th>账号</th><th>协商 IP</th><th>来源诊断</th></tr></thead><tbody>${rows.map(x => `<tr><td>${esc(x.interface)}</td><td>${esc(x.username)}</td><td>${esc(x.peer_ip)}</td><td class="${x.diagnostics.nat_suspected ? "nat" : ""}">${esc(x.diagnostics.warning || x.diagnostics.observed_networks.join(", ") || "暂无样本")}</td></tr>`).join("")}</tbody></table>` : "暂无在线连接"; } catch (e) { toast(e.message, true); } }
-function toolbar(kind) { return `<div class="bulk-actions"><label class="select-all"><input type="checkbox" data-select-all="${kind}">全选</label><button class="danger" data-bulk-delete="${kind}">删除选中</button></div>`; }
+async function refreshState() { const result = await api("/api/state"); state = result.state; pending = result.pending; renderRoutes(); renderPending(); }
+function renderPending() {
+  $("#pending").classList.toggle("hidden", !pending);
+  if (pending) $("#countdown").textContent = `请在 ${Math.max(0, Math.ceil(pending.deadline_epoch - Date.now() / 1000))} 秒内确认`;
+}
+function toolbar(kind) { return `<div class="bulk-actions"><label><input type="checkbox" data-select-all="${kind}"> 全选</label><button class="danger" data-bulk-delete="${kind}">删除选中</button></div>`; }
 function renderRoutes() {
-  $("#egress-list").innerHTML = state.egresses.length ? `${toolbar("egresses")}<table><thead><tr><th class="select-cell"></th><th>名称</th><th>类型</th><th>地址</th><th>最近测试</th><th>操作</th></tr></thead><tbody>${state.egresses.map(x => `<tr><td class="select-cell"><input type="checkbox" class="egress-select" value="${esc(x.id)}"></td><td>${esc(x.name)}</td><td>${esc(x.type)}</td><td>${esc(x.address)}:${x.port}</td><td class="test-result ${testResults[x.id]?.ok === false ? "bad" : ""}">${esc(testResults[x.id]?.text || "未测试")}</td><td class="actions"><button onclick="editEgress('${esc(x.id)}')">编辑</button><button onclick="testEgress('${esc(x.id)}')">测试</button><button class="danger" onclick="removeItem('egresses','${esc(x.id)}')">删除</button></td></tr>`).join("")}</tbody></table>` : "尚未配置出口";
-  $("#binding-list").innerHTML = state.bindings.length ? `${toolbar("bindings")}<table><thead><tr><th class="select-cell"></th><th>来源网段</th><th>出口</th><th>内部端口</th><th>内部标记</th><th>操作</th></tr></thead><tbody>${state.bindings.map(x => `<tr><td class="select-cell"><input type="checkbox" class="binding-select" value="${esc(x.id)}"></td><td>${esc(x.source_cidr)}</td><td>${esc(state.egresses.find(e => e.id === x.egress_id)?.name || x.egress_id)}</td><td>${x.tproxy_port}</td><td>${x.mark}</td><td class="actions"><button onclick="editBinding('${esc(x.id)}')">编辑</button><button class="danger" onclick="removeItem('bindings','${esc(x.id)}')">删除</button></td></tr>`).join("")}</tbody></table>` : "尚未配置来源网段";
-  document.querySelectorAll("[data-select-all]").forEach(el => el.onchange = () => document.querySelectorAll(`.${el.dataset.selectAll === "egresses" ? "egress" : "binding"}-select`).forEach(x => x.checked = el.checked));
-  document.querySelectorAll("[data-bulk-delete]").forEach(el => el.onclick = () => bulkDelete(el.dataset.bulkDelete));
+  $("#egress-list").innerHTML = state.egresses.length ? `${toolbar("egresses")}<table><thead><tr><th></th><th>名称</th><th>类型</th><th>地址</th><th>最近测试</th><th>操作</th></tr></thead><tbody>${state.egresses.map((x) => `<tr><td><input type="checkbox" class="egress-select" value="${esc(x.id)}"></td><td>${esc(x.name)}</td><td>${esc(x.type)}</td><td>${esc(x.address)}:${x.port}</td><td class="test-result ${testResults[x.id]?.ok === false ? "bad" : ""}">${esc(testResults[x.id]?.text || "未测试")}</td><td class="actions"><button onclick="editEgress('${esc(x.id)}')">编辑</button><button onclick="testEgress('${esc(x.id)}')">测试</button><button class="danger" onclick="removeItem('egresses','${esc(x.id)}')">删除</button></td></tr>`).join("")}</tbody></table>` : "尚未配置出口";
+  $("#binding-list").innerHTML = state.bindings.length ? `${toolbar("bindings")}<table><thead><tr><th></th><th>来源网段</th><th>出口</th><th>操作</th></tr></thead><tbody>${state.bindings.map((x) => `<tr><td><input type="checkbox" class="binding-select" value="${esc(x.id)}"></td><td>${esc(x.source_cidr)}</td><td>${esc(state.egresses.find((e) => e.id === x.egress_id)?.name || x.egress_id)}</td><td class="actions"><button onclick="editBinding('${esc(x.id)}')">编辑</button><button class="danger" onclick="removeItem('bindings','${esc(x.id)}')">删除</button></td></tr>`).join("")}</tbody></table>` : "尚未配置来源网段";
+  document.querySelectorAll("[data-select-all]").forEach((el) => el.onchange = () => document.querySelectorAll(`.${el.dataset.selectAll === "egresses" ? "egress" : "binding"}-select`).forEach((x) => x.checked = el.checked));
+  document.querySelectorAll("[data-bulk-delete]").forEach((el) => el.onclick = () => bulkDelete(el.dataset.bulkDelete));
 }
 function field(name, label, value = "", type = "text", required = true) { return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${required ? "required" : ""}></label>`; }
-const dialog = $("#editor"), fields = $("#editor-fields"); let editorSave;
+const dialog = $("#editor");
+const fields = $("#editor-fields");
+let editorSave;
 function openEditor(title, html, save) { $("#editor-title").textContent = title; fields.innerHTML = html; $("#form-error").textContent = ""; editorSave = save; dialog.showModal(); }
-$("#cancel").onclick = () => dialog.close(); $("#editor-form").onsubmit = async e => { e.preventDefault(); try { await editorSave(new FormData(e.target)); dialog.close(); await refreshState(); toast("已应用，请在 60 秒内确认"); } catch (err) { $("#form-error").textContent = err.message; } };
+$("#cancel").onclick = () => dialog.close();
+$("#editor-form").onsubmit = async (event) => { event.preventDefault(); try { await editorSave(new FormData(event.target)); dialog.close(); await refreshState(); toast("已应用，请在 60 秒内确认"); } catch (error) { $("#form-error").textContent = error.message; } };
 function newInternalId() { return `new-${Math.random().toString(16).slice(2, 14)}`; }
-async function autofillSs() { const uri = dialog.querySelector('[name="ss_uri"]')?.value.trim(); if (!uri?.startsWith("ss://") || !uri.includes("@")) return; try { const p = await api("/api/parse-ss", {method:"POST", body:JSON.stringify({uri, egress_id:editorEgressId || newInternalId()})}); for (const key of ["name","address","port","password","method"]) { const el = dialog.querySelector(`[name="${key}"]`); if (el && p[key] != null) el.value = p[key]; } toast("SS 链接已自动填充"); } catch (_) {} }
-async function saveEgress(f) { const item = {name:f.get("name"), type:f.get("type"), address:f.get("address"), port:Number(f.get("port")), username:f.get("username") || null, password:f.get("password") || null, method:f.get("method") || null, reconnect_delay:Number(f.get("reconnect_delay") || 5), heartbeat_host1:f.get("heartbeat_host1") || "1.1.1.1", heartbeat_host2:f.get("heartbeat_host2") || "8.8.8.8", max_delay_ms:Number(f.get("max_delay_ms") || 0), dns_proxy:!!f.get("dns_proxy"), mtu:Number(f.get("mtu") || 1400)}; if (f.get("ss_uri")) Object.assign(item, await api("/api/parse-ss", {method:"POST", body:JSON.stringify({uri:f.get("ss_uri"), egress_id:editorEgressId || newInternalId()})})); if (editorEgressId) item.id = editorEgressId; const path = editorEgressId ? `/api/egresses/${encodeURIComponent(editorEgressId)}` : "/api/egresses"; await api(path, {method:editorEgressId ? "PUT" : "POST", body:JSON.stringify(item)}); }
-window.editEgress = (id = "") => { editorEgressId = id; const x = state.egresses.find(e => e.id === id) || {name:"",type:"shadowsocks",address:"",port:8388,username:"",password:"",method:"aes-256-gcm",reconnect_delay:5,heartbeat_host1:"1.1.1.1",heartbeat_host2:"8.8.8.8",max_delay_ms:0,dns_proxy:false,mtu:1400}; const draw = type => { const l2tp = type === "l2tp"; fields.innerHTML = `${field("name","名称",x.name)}<label>类型<select name="type"><option value="shadowsocks">Shadowsocks</option><option value="socks">SOCKS5</option><option value="http">HTTP</option><option value="l2tp">纯 L2TP（无 IPsec）</option></select></label>${l2tp ? `${field("address","服务器地址",x.address)}${field("port","UDP 端口",x.port || 1701,"number")}${field("username","VPN 账号",x.username || "")}${field("password","VPN 密码",x.password || "","password")}<fieldset><legend>L2TP 参数</legend>${field("reconnect_delay","重连等待时间（秒）",x.reconnect_delay || 5,"number",false)}${field("heartbeat_host1","心跳服务器 1",x.heartbeat_host1 || "1.1.1.1","text",false)}${field("heartbeat_host2","心跳服务器 2",x.heartbeat_host2 || "8.8.8.8","text",false)}${field("max_delay_ms","最大时延（0 不限制）",x.max_delay_ms || 0,"number",false)}${field("mtu","MTU",x.mtu || 1400,"number",false)}<label class="toggle"><input name="dns_proxy" type="checkbox" ${x.dns_proxy ? "checked" : ""}>通过 PPP 获取 DNS</label></fieldset>` : `${field("ss_uri","粘贴 ss:// 链接（可选）","","text",false)}${field("address","服务器地址",x.address)}${field("port","端口",x.port,"number")}${field("username","用户名（可选）",x.username || "","text",false)}${field("password","密码（可选）",x.password || "","password",false)}${field("method","SS 加密方式",x.method || "","text",false)}`}`; dialog.querySelector('[name="type"]').value = type; dialog.querySelector('[name="type"]').onchange = e => draw(e.target.value); dialog.querySelector('[name="ss_uri"]')?.addEventListener("input", autofillSs); }; openEditor(id ? "编辑出口" : "新增出口", "", saveEgress); draw(x.type); };
-window.editBinding = (id = "") => { const x = state.bindings.find(b => b.id === id) || {source_cidr:"",egress_id:state.egresses[0]?.id || "",enabled:true}; openEditor(id ? "编辑绑定" : "新增绑定", `${field("source_cidr","来源网段 CIDR",x.source_cidr)}<label>出口<select name="egress_id">${state.egresses.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></label><label class="toggle"><input name="enabled" type="checkbox" ${x.enabled ? "checked" : ""}>启用</label>`, async f => { const item = {source_cidr:f.get("source_cidr"),egress_id:f.get("egress_id"),enabled:!!f.get("enabled")}; if (id) { item.id = id; item.tproxy_port = x.tproxy_port; item.mark = x.mark; await api(`/api/bindings/${encodeURIComponent(id)}`, {method:"PUT", body:JSON.stringify(item)}); } else await api("/api/bindings", {method:"POST", body:JSON.stringify(item)}); }); dialog.querySelector('[name="egress_id"]').value = x.egress_id; };
-$("#add-egress").onclick = () => editEgress(); $("#add-binding").onclick = () => state.egresses.length ? editBinding() : toast("请先新增出口", true);
-window.removeItem = async (type,id) => { if (!confirm("确定删除？")) return; try { await api(`/api/${type}/${encodeURIComponent(id)}`, {method:"DELETE"}); await refreshState(); } catch (e) { toast(e.message,true); } };
-async function bulkDelete(type) { const cls = type === "egresses" ? ".egress-select" : ".binding-select"; const ids = [...document.querySelectorAll(`${cls}:checked`)].map(x => x.value); if (!ids.length) return toast("请先选择项目", true); if (!confirm(`确定删除选中的 ${ids.length} 项？`)) return; try { await api(`/api/${type}/bulk-delete`, {method:"POST", body:JSON.stringify({ids})}); await refreshState(); toast("已删除"); } catch (e) { toast(e.message, true); } }
-window.testEgress = async id => { try { const r = await api(`/api/egresses/${encodeURIComponent(id)}/test`, {method:"POST"}); testResults[id] = {ok:r.ok, text:r.ok ? `${r.latency_ms} ms（启动 ${r.startup_ms ?? "?"} ms）` : (r.detail || "失败")}; renderRoutes(); toast(testResults[id].text, !r.ok); } catch(e) { testResults[id] = {ok:false, text:e.message}; renderRoutes(); toast(e.message,true); } };
-async function refreshSystem() { try { const d = await api("/api/system"); $("#system-list").innerHTML = `<p>Xray: ${esc(d.xray_version)}</p>` + Object.entries(d.services).map(([n,s]) => `<div class="section-title"><span>${esc(n)} <strong class="${s === "active" ? "ok" : "bad"}">${esc(s)}</strong></span><button onclick="restartService('${n}')">重启</button></div>`).join(""); const log = await api("/api/log-settings"); $("#xray-log-level").value = log.xray_log_level; $("#log-retention-days").value = log.log_retention_days; } catch(e) { toast(e.message, true); } }
-window.restartService = async name => { try { await api(`/api/system/${name}/restart`, {method:"POST"}); await refreshSystem(); toast("服务已重启"); } catch(e) { toast(e.message,true); } };
-$("#save-log-settings").onclick = async () => { try { await api("/api/log-settings", {method:"PUT", body:JSON.stringify({xray_log_level:$("#xray-log-level").value, log_retention_days:Number($("#log-retention-days").value)})}); await api("/api/system/xray/restart", {method:"POST"}); await api("/api/system/l2er-watchdog/restart", {method:"POST"}); toast("日志设置已保存并生效"); } catch(e) { toast(e.message,true); } };
-$("#export-config").onclick = async () => { try { const r = await fetch("/api/config/export", {headers:{"Accept":"application/json"}}); if (!r.ok) throw Error(`HTTP ${r.status}`); const blob = await r.blob(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "l2er-config.json"; a.click(); URL.revokeObjectURL(url); toast("配置备份已导出"); } catch (e) { toast(e.message, true); } };
+async function autofillSs() {
+  const uri = dialog.querySelector('[name="ss_uri"]')?.value.trim();
+  if (!uri?.startsWith("ss://") || !uri.includes("@")) return;
+  try {
+    const parsed = await api("/api/parse-ss", {method:"POST", body:JSON.stringify({uri, egress_id:editorEgressId || newInternalId()})});
+    ["name", "address", "port", "password", "method"].forEach((key) => { const input = dialog.querySelector(`[name="${key}"]`); if (input && parsed[key] != null) input.value = parsed[key]; });
+  } catch (_) { /* validation is shown when the form is submitted */ }
+}
+async function saveEgress(form) {
+  const item = {name:form.get("name"), type:form.get("type"), address:form.get("address"), port:Number(form.get("port")), username:form.get("username") || null, password:form.get("password") || null, method:form.get("method") || null};
+  if (form.get("ss_uri")) Object.assign(item, await api("/api/parse-ss", {method:"POST", body:JSON.stringify({uri:form.get("ss_uri"), egress_id:editorEgressId || newInternalId()})}));
+  if (editorEgressId) item.id = editorEgressId;
+  await api(editorEgressId ? `/api/egresses/${encodeURIComponent(editorEgressId)}` : "/api/egresses", {method:editorEgressId ? "PUT" : "POST", body:JSON.stringify(item)});
+}
+window.editEgress = (id = "") => {
+  editorEgressId = id;
+  const x = state.egresses.find((e) => e.id === id) || {name:"", type:"shadowsocks", address:"", port:8388, username:"", password:"", method:"aes-256-gcm"};
+  const draw = (type) => {
+    const common = `${field("name", "名称", x.name)}<label>类型<select name="type"><option value="shadowsocks">Shadowsocks</option><option value="socks">SOCKS5</option><option value="http">HTTP</option></select></label>`;
+    const proxy = type === "shadowsocks"
+      ? `${field("ss_uri", "ss:// 链接（可选）", "", "text", false)}${field("address", "服务器地址", x.address)}${field("port", "端口", x.port, "number")}${field("password", "密码", x.password || "", "password")}${field("method", "加密方式", x.method || "aes-256-gcm")}`
+      : `${field("address", "服务器地址", x.address)}${field("port", "端口", x.port, "number")}${field("username", "用户名（可选）", x.username || "", "text", false)}${field("password", "密码（可选）", x.password || "", "password", false)}`;
+    fields.innerHTML = common + proxy;
+    dialog.querySelector('[name="type"]').value = type;
+    dialog.querySelector('[name="type"]').onchange = (event) => draw(event.target.value);
+    dialog.querySelector('[name="ss_uri"]')?.addEventListener("input", autofillSs);
+  };
+  openEditor(id ? "编辑 Xray 出口" : "新增 Xray 出口", "", saveEgress);
+  draw(x.type);
+};
+window.editBinding = (id = "") => {
+  const x = state.bindings.find((b) => b.id === id) || {source_cidr:"", egress_id:state.egresses[0]?.id || "", enabled:true};
+  openEditor(id ? "编辑分流" : "新增分流", `${field("source_cidr", "来源网段 CIDR", x.source_cidr)}<label>出口<select name="egress_id">${state.egresses.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("")}</select></label><label class="toggle"><input name="enabled" type="checkbox" ${x.enabled ? "checked" : ""}> 启用</label>`, async (form) => {
+    const item = {source_cidr:form.get("source_cidr"), egress_id:form.get("egress_id"), enabled:!!form.get("enabled")};
+    if (id) { item.id = id; item.tproxy_port = x.tproxy_port; item.mark = x.mark; await api(`/api/bindings/${encodeURIComponent(id)}`, {method:"PUT", body:JSON.stringify(item)}); }
+    else await api("/api/bindings", {method:"POST", body:JSON.stringify(item)});
+  });
+  dialog.querySelector('[name="egress_id"]').value = x.egress_id;
+};
+$("#add-egress").onclick = () => editEgress();
+$("#add-binding").onclick = () => state.egresses.length ? editBinding() : toast("请先新增出口", true);
+window.removeItem = async (type, id) => { if (!confirm("确定删除？")) return; try { await api(`/api/${type}/${encodeURIComponent(id)}`, {method:"DELETE"}); await refreshState(); } catch (error) { toast(error.message, true); } };
+async function bulkDelete(type) { const selector = type === "egresses" ? ".egress-select" : ".binding-select"; const ids = [...document.querySelectorAll(`${selector}:checked`)].map((x) => x.value); if (!ids.length) return toast("请先选择项目", true); if (!confirm(`确定删除选中的 ${ids.length} 项？`)) return; try { await api(`/api/${type}/bulk-delete`, {method:"POST", body:JSON.stringify({ids})}); await refreshState(); } catch (error) { toast(error.message, true); } }
+window.testEgress = async (id) => { try { const result = await api(`/api/egresses/${encodeURIComponent(id)}/test`, {method:"POST"}); testResults[id] = {ok:result.ok, text:result.ok ? `${result.latency_ms} ms（启动 ${result.startup_ms ?? "?"} ms）` : (result.detail || "失败")}; renderRoutes(); } catch (error) { testResults[id] = {ok:false, text:error.message}; renderRoutes(); } };
+async function refreshConnections() { try { const rows = await api("/api/connections"); $("#connection-list").innerHTML = rows.length ? `<table><thead><tr><th>接口</th><th>账号</th><th>协商 IP</th><th>来源诊断</th></tr></thead><tbody>${rows.map((x) => `<tr><td>${esc(x.interface)}</td><td>${esc(x.username)}</td><td>${esc(x.peer_ip)}</td><td>${esc(x.diagnostics.warning || x.diagnostics.observed_networks.join(", ") || "暂无样本")}</td></tr>`).join("")}</tbody></table>` : "暂无在线连接"; } catch (error) { toast(error.message, true); } }
+async function refreshSystem() { try { const data = await api("/api/system"); $("#system-list").innerHTML = `<p>Xray: ${esc(data.xray_version)}</p>` + Object.entries(data.services).map(([name, status]) => `<div class="section-title"><span>${esc(name)} <strong class="${status === "active" ? "ok" : "bad"}">${esc(status)}</strong></span><button onclick="restartService('${esc(name)}')">重启</button></div>`).join(""); const log = await api("/api/log-settings"); $("#xray-log-level").value = log.xray_log_level; $("#log-retention-days").value = log.log_retention_days; } catch (error) { toast(error.message, true); } }
+window.restartService = async (name) => { try { await api(`/api/system/${name}/restart`, {method:"POST"}); await refreshSystem(); } catch (error) { toast(error.message, true); } };
+$("#save-log-settings").onclick = async () => { try { await api("/api/log-settings", {method:"PUT", body:JSON.stringify({xray_log_level:$("#xray-log-level").value, log_retention_days:Number($("#log-retention-days").value)})}); await api("/api/system/xray/restart", {method:"POST"}); await api("/api/system/xrer-watchdog/restart", {method:"POST"}); await refreshSystem(); } catch (error) { toast(error.message, true); } };
+$("#export-config").onclick = async () => { try { const response = await fetch("/api/config/export"); if (!response.ok) throw Error(`HTTP ${response.status}`); const a = document.createElement("a"); a.href = URL.createObjectURL(await response.blob()); a.download = "xrer-config.json"; a.click(); } catch (error) { toast(error.message, true); } };
 $("#import-config").onclick = () => $("#import-file").click();
-$("#import-file").onchange = async e => { const file = e.target.files?.[0]; e.target.value = ""; if (!file) return; try { const backup = JSON.parse(await file.text()); const imported = backup.state || backup; const count = `${imported.egresses?.length || 0} 个出口、${imported.bindings?.length || 0} 个分流绑定`; if (!confirm(`确认导入 ${count}？当前配置会先自动保存，可在待确认窗口回滚。`)) return; await api("/api/config/import", {method:"POST", body:JSON.stringify({backup})}); await refreshState(); toast("配置已导入，请在 60 秒内确认"); } catch (e) { toast(`导入失败：${e.message}`, true); } };
-document.querySelectorAll("[data-refresh]").forEach(b => b.onclick = () => b.dataset.refresh === "system" ? refreshSystem() : refreshConnections());
-bootstrap().catch(e => toast(e.message,true));
+$("#import-file").onchange = async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; try { const backup = JSON.parse(await file.text()); if (!confirm("确认导入配置？当前配置会先自动保存。")) return; await api("/api/config/import", {method:"POST", body:JSON.stringify({backup})}); await refreshState(); } catch (error) { toast(`导入失败：${error.message}`, true); } };
+document.querySelectorAll("nav button").forEach((button) => button.onclick = () => { document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x === button)); document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("hidden", x.id !== button.dataset.tab)); });
+$("#auth-form").onsubmit = async (event) => { event.preventDefault(); try { const body = JSON.stringify({username:$("#username").value, password:$("#password").value}); if (!(await api("/api/bootstrap")).initialized) { await api("/api/initialize", {method:"POST", body}); toast("管理员已初始化，请重新登录"); return; } const result = await api("/api/login", {method:"POST", body}); csrf = result.csrf; sessionStorage.setItem("csrf", csrf); showDashboard(); } catch (error) { toast(error.message, true); } };
+$("#logout").onclick = async () => { try { await api("/api/logout", {method:"POST"}); } finally { sessionStorage.clear(); location.reload(); } };
+$("#confirm").onclick = async () => { try { await api(`/api/transactions/${pending.id}/confirm`, {method:"POST"}); pending = null; renderPending(); } catch (error) { toast(error.message, true); } };
+$("#rollback").onclick = async () => { try { await api(`/api/transactions/${pending.id}/rollback`, {method:"POST"}); await refreshState(); } catch (error) { toast(error.message, true); } };
+document.querySelectorAll("[data-refresh]").forEach((button) => button.onclick = () => button.dataset.refresh === "system" ? refreshSystem() : refreshConnections());
+(async () => { try { const info = await api("/api/bootstrap"); $("#auth-title").textContent = info.initialized ? "登录" : "初始化管理员"; if (csrf) { await api("/api/state"); showDashboard(); } } catch (error) { toast(error.message, true); } })();

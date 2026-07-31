@@ -6,7 +6,6 @@ import uuid
 
 from .models import AppState, Transaction, utcnow
 from .network import NetworkManager
-from .l2tp import L2TPManager
 from .settings import Settings
 from .storage import StateStore, atomic_write, exclusive_lock
 from .xray import XrayManager
@@ -18,7 +17,6 @@ class TransactionManager:
         self.store = StateStore(settings)
         self.xray = XrayManager(settings)
         self.network = NetworkManager(settings)
-        self.l2tp = L2TPManager(settings)
 
     def pending(self) -> Transaction | None:
         if not self.settings.pending_file.exists():
@@ -33,7 +31,6 @@ class TransactionManager:
             candidate = candidate.model_copy(update={"revision": previous.revision + 1, "updated_at": utcnow()})
             candidate = AppState.model_validate(candidate.model_dump())
             self.xray.require_version()
-            self.l2tp.write_configs(candidate)
             candidate_path = self.xray.write_config(candidate, "candidate.json")
             self.xray.validate(candidate_path)
             snapshot = self.store.snapshot(previous, "pre-change")
@@ -49,7 +46,6 @@ class TransactionManager:
                     self.xray.restart_with(candidate)
                 else:
                     self.xray.apply_dynamic(previous, candidate)
-                self.l2tp.apply(candidate)
                 self.network.apply(candidate)
                 self.store.save(candidate)
                 self.xray.write_config(candidate)
@@ -60,7 +56,6 @@ class TransactionManager:
                     else:
                         self.xray.apply_dynamic(candidate, previous)
                     self.network.apply(previous)
-                    self.l2tp.apply(previous)
                     self.store.save(previous)
                     self.xray.write_config(previous)
                 finally:
@@ -88,7 +83,6 @@ class TransactionManager:
                 self.xray.restart_with(previous)
             else:
                 self.xray.apply_dynamic(current, previous)
-            self.l2tp.apply(previous)
             self.network.apply(previous)
             self.store.save(previous)
             self.xray.write_config(previous)

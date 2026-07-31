@@ -6,10 +6,9 @@ import socket
 import subprocess
 import tempfile
 import time
-import json
 from pathlib import Path
 
-from .models import AppState, Binding, Egress, ProxyType
+from .models import Binding, Egress
 from .settings import Settings
 from .xray import XrayManager, make_outbound
 
@@ -19,7 +18,7 @@ class SystemStatus:
         self.settings = settings
 
     def service(self, name: str) -> str:
-        unit = {"xray": "l2er-xray", "l2er-watchdog": "l2er-watchdog", "xl2tpd": "xl2tpd"}.get(name, name)
+        unit = {"xray": "xrer-xray", "xrer-watchdog": "xrer-watchdog", "xl2tpd": "xl2tpd"}.get(name, name)
         if self.settings.dry_run:
             return "dry-run"
         result = subprocess.run(["systemctl", "is-active", unit], text=True, capture_output=True, timeout=5, check=False)
@@ -27,17 +26,17 @@ class SystemStatus:
 
     def all(self) -> dict:
         return {
-            "services": {name: self.service(name) for name in ("xl2tpd", "xray", "l2er-watchdog")},
+            "services": {name: self.service(name) for name in ("xl2tpd", "xray", "xrer-watchdog")},
             "xray_version": XrayManager(self.settings).version(),
         }
 
     def restart(self, name: str) -> None:
-        allowed = {"xl2tpd", "xray", "l2er-watchdog"}
+        allowed = {"xl2tpd", "xray", "xrer-watchdog"}
         if name not in allowed:
             raise ValueError("不允许操作该服务")
         if self.settings.dry_run:
             return
-        unit = {"xray": "l2er-xray", "l2er-watchdog": "l2er-watchdog", "xl2tpd": "xl2tpd"}[name]
+        unit = {"xray": "xrer-xray", "xrer-watchdog": "xrer-watchdog", "xl2tpd": "xl2tpd"}[name]
         result = subprocess.run(["systemctl", "restart", unit], text=True, capture_output=True, timeout=30, check=False)
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or f"重启 {name} 失败")
@@ -48,31 +47,6 @@ async def test_egress(settings: Settings, egress: Egress) -> dict:
     if settings.dry_run:
         await asyncio.sleep(0.01)
         return {"ok": True, "latency_ms": 10, "detail": "dry-run"}
-    if egress.type == ProxyType.L2TP:
-        mapping = settings.run_dir / "ppp" / f"{egress.id}.json"
-        try:
-            state = json.loads(mapping.read_text(encoding="utf-8"))
-            interface = state.get("ppp_interface") or state.get("interface")
-            namespace = state.get("namespace")
-        except (OSError, ValueError):
-            interface = None
-            namespace = None
-        if not interface:
-            return {"ok": False, "latency_ms": 0, "detail": "L2TP PPP interface is not connected"}
-        started = time.perf_counter()
-        command = ["curl", "-4", "--interface", interface, "--max-time", "12", "-sS", "-o", "/dev/null", "-w", "%{http_code} %{time_total}", "https://www.gstatic.com/generate_204"]
-        if namespace:
-            command = ["ip", "netns", "exec", namespace, *command]
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        elapsed = round((time.perf_counter() - started) * 1000)
-        parts = stdout.decode(errors="replace").strip().split()
-        ok = process.returncode == 0 and bool(parts) and parts[0] in {"200", "204"}
-        detail = f"HTTP {parts[0]} via {interface}" if parts else (stderr.decode(errors="replace").strip() or "L2TP connectivity test failed")
-        return {"ok": ok, "latency_ms": elapsed, "startup_ms": 0, "request_ms": elapsed, "detail": detail}
     with socket.socket() as reserve:
         reserve.bind(("127.0.0.1", 0))
         port = reserve.getsockname()[1]
@@ -85,7 +59,7 @@ async def test_egress(settings: Settings, egress: Egress) -> dict:
         "outbounds": [outbound],
         "routing": {"rules": [{"type": "field", "inboundTag": ["test-in"], "outboundTag": "tested-egress"}]},
     }
-    with tempfile.TemporaryDirectory(prefix="l2me-test-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="xrer-test-") as temporary:
         path = Path(temporary) / "config.json"
         path.write_text(json.dumps(config), encoding="utf-8")
         process = await asyncio.create_subprocess_exec(str(settings.xray_binary), "run", "-config", str(path), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)

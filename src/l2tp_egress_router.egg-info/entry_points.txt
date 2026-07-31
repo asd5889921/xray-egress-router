@@ -1,4 +1,0 @@
-[console_scripts]
-l2er-ppp-event = l2tp_multi_egress.ppp_event:run
-l2er-watchdog = l2tp_multi_egress.watchdog:run
-l2er-web = l2tp_multi_egress.main:run

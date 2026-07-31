@@ -20,7 +20,6 @@ class ProxyType(StrEnum):
     SHADOWSOCKS = "shadowsocks"
     SOCKS = "socks"
     HTTP = "http"
-    L2TP = "l2tp"
 
 
 class Egress(BaseModel):
@@ -32,12 +31,6 @@ class Egress(BaseModel):
     username: str | None = None
     password: str | None = None
     method: str | None = None
-    reconnect_delay: Annotated[int, Field(ge=1, le=3600)] = 5
-    heartbeat_host1: str = "1.1.1.1"
-    heartbeat_host2: str = "8.8.8.8"
-    max_delay_ms: Annotated[int, Field(ge=0, le=600000)] = 0
-    dns_proxy: bool = False
-    mtu: Annotated[int, Field(ge=576, le=1500)] = 1400
 
     @field_validator("id")
     @classmethod
@@ -61,13 +54,6 @@ class Egress(BaseModel):
                 raise ValueError("Shadowsocks 必须提供密码")
             if not self.method:
                 raise ValueError("Shadowsocks 必须提供加密方式")
-        if self.type == ProxyType.L2TP:
-            if self.port != 1701:
-                raise ValueError("L2TP port must be UDP 1701")
-            if not self.username or not self.password:
-                raise ValueError("L2TP requires username and password")
-            if not self.heartbeat_host1 or not self.heartbeat_host2:
-                raise ValueError("L2TP requires heartbeat hosts")
         return self
 
 

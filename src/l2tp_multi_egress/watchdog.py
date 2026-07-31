@@ -5,7 +5,6 @@ from logging.handlers import TimedRotatingFileHandler
 import time
 
 from .settings import Settings
-from .storage import exclusive_lock
 from .transaction import TransactionManager
 
 
@@ -15,15 +14,9 @@ def run() -> None:
     handler = TimedRotatingFileHandler(settings.log_dir / "watchdog-error.log", when="midnight", backupCount=settings.log_retention_days, encoding="utf-8") if settings.log_retention_days else logging.NullHandler()
     logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(levelname)s %(message)s", handlers=[handler])
     manager = TransactionManager(settings)
-    last_l2tp_reconcile = 0.0
     while True:
         try:
             now = time.time()
-            if now - last_l2tp_reconcile >= 5:
-                with exclusive_lock(settings.lock_file):
-                    if not manager.pending():
-                        manager.l2tp.apply(manager.store.load())
-                last_l2tp_reconcile = now
             pending = manager.pending()
             if pending and now >= pending.deadline_epoch:
                 logging.error("transaction %s expired; rolling back", pending.id)
