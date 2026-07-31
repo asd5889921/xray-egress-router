@@ -5,8 +5,14 @@ import json
 import os
 import time
 
+from .network import NetworkManager
 from .settings import Settings
-from .storage import StateStore, atomic_write
+from .storage import StateStore, atomic_write, exclusive_lock
+
+
+def restore_network(settings: Settings) -> None:
+    with exclusive_lock(settings.lock_file):
+        NetworkManager(settings).apply(StateStore(settings).load())
 
 
 def run() -> None:
@@ -36,16 +42,11 @@ def run() -> None:
     }
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
-    # PPP reconnects must restore the Panabit source routes immediately.
+    # PPP reconnects restore routes and the complete TPROXY policy immediately.
     try:
-        from .network import NetworkManager
-
-        manager = NetworkManager(settings)
-        state = StateStore(settings).load()
-        manager.ensure_source_routes(state)
-        manager.ensure_policy_route(state)
+        restore_network(settings)
     except Exception as exc:
-        print(f"xrer: failed to restore source routes on {args.interface}: {exc}", flush=True)
+        print(f"xrer: failed to restore network policy on {args.interface}: {exc}", flush=True)
 
 
 if __name__ == "__main__":

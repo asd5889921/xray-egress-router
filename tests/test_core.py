@@ -9,12 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from l2tp_multi_egress import ppp_event, watchdog
 from l2tp_multi_egress.diagnostics import SourceDiagnostics
 from l2tp_multi_egress.main import create_app
 from l2tp_multi_egress.models import AppState, Binding, Egress, ProxyType
 from l2tp_multi_egress.network import iptables_restore_script
 from l2tp_multi_egress.settings import Settings
 from l2tp_multi_egress.ss_uri import parse_ss_uri
+from l2tp_multi_egress.storage import StateStore
 from l2tp_multi_egress.transaction import TransactionManager
 from l2tp_multi_egress.xray import build_config
 
@@ -96,6 +98,25 @@ def test_transaction_apply_confirm_and_rollback(tmp_path):
     tx2 = manager.apply(candidate)
     manager.confirm(tx2.id)
     assert manager.pending() is None
+
+
+@pytest.mark.parametrize("module, function_name", [(watchdog, "reconcile_network"), (ppp_event, "restore_network")])
+def test_runtime_reconciliation_reapplies_stored_state(tmp_path, monkeypatch, module, function_name):
+    cfg = settings(tmp_path)
+    expected = sample_state()
+    StateStore(cfg).save(expected)
+    applied = []
+
+    class FakeNetworkManager:
+        def __init__(self, _settings):
+            pass
+
+        def apply(self, state):
+            applied.append(state)
+
+    monkeypatch.setattr(module, "NetworkManager", FakeNetworkManager)
+    getattr(module, function_name)(cfg)
+    assert applied == [expected]
 
 
 def test_web_login_crud_and_confirmation(tmp_path):
