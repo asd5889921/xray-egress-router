@@ -185,6 +185,16 @@ class XrayManager:
             self._restore_handlers(old, changed)
             self.replace_routing(old)
             raise
+        finally:
+            self._cleanup_handler_files(changed)
+
+    def _cleanup_handler_files(self, ids: set[str]) -> None:
+        for key in ids:
+            for prefix in ("xrer-in-", "xrer-out-", "restore-xrer-in-", "restore-xrer-out-"):
+                try:
+                    (self.settings.run_dir / f"{prefix}{key}.json").unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _restore_handlers(self, state: AppState, ids: set[str]) -> None:
         bindings = {x.id: x for x in state.bindings if x.enabled}

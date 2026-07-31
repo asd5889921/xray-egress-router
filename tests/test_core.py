@@ -18,7 +18,7 @@ from l2tp_multi_egress.settings import Settings
 from l2tp_multi_egress.ss_uri import parse_ss_uri
 from l2tp_multi_egress.storage import StateStore
 from l2tp_multi_egress.transaction import TransactionManager
-from l2tp_multi_egress.xray import build_config
+from l2tp_multi_egress.xray import XrayManager, build_config
 
 
 def settings(tmp_path: Path, rollback: int = 60) -> Settings:
@@ -117,6 +117,17 @@ def test_runtime_reconciliation_reapplies_stored_state(tmp_path, monkeypatch, mo
     monkeypatch.setattr(module, "NetworkManager", FakeNetworkManager)
     getattr(module, function_name)(cfg)
     assert applied == [expected]
+
+
+def test_dynamic_handler_payloads_are_removed_after_apply(tmp_path):
+    cfg = settings(tmp_path)
+    cfg.ensure_dirs()
+    manager = XrayManager(cfg)
+
+    manager.apply_dynamic(AppState(), sample_state())
+
+    assert not list(cfg.run_dir.glob("xrer-*.json"))
+    assert not list(cfg.run_dir.glob("restore-xrer-*.json"))
 
 
 def test_web_login_crud_and_confirmation(tmp_path):

@@ -6,5 +6,6 @@ __pycache__/
 .xray-review/
 .codex/
 .dev/
+build/
 *.egg-info/
 
