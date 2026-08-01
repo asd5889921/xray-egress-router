@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import ssl
 import socket
 import subprocess
@@ -59,11 +60,12 @@ async def test_egress(settings: Settings, egress: Egress) -> dict:
         "outbounds": [outbound],
         "routing": {"rules": [{"type": "field", "inboundTag": ["test-in"], "outboundTag": "tested-egress"}]},
     }
-    with tempfile.TemporaryDirectory(prefix="xrer-test-") as temporary:
-        path = Path(temporary) / "config.json"
-        path.write_text(json.dumps(config), encoding="utf-8")
-        process = await asyncio.create_subprocess_exec(str(settings.xray_binary), "run", "-config", str(path), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-        try:
+    process = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="xrer-test-") as temporary:
+            path = Path(temporary) / "config.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            process = await asyncio.create_subprocess_exec(str(settings.xray_binary), "run", "-config", str(path), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
             await asyncio.sleep(0.35)
             if process.returncode is not None:
                 error = (await process.stderr.read()).decode(errors="replace").strip()
@@ -110,16 +112,17 @@ async def test_egress(settings: Settings, egress: Egress) -> dict:
                 "tls_http_ms": round((finished_at - tls_started) * 1000),
                 "detail": line.decode(errors="replace").strip(),
             }
-        except Exception as exc:
-            failed_at = time.perf_counter()
-            return {
-                "ok": False,
-                "latency_ms": round((failed_at - started) * 1000),
-                "startup_ms": round((failed_at - started) * 1000),
-                "request_ms": None,
-                "detail": str(exc),
-            }
-        finally:
+    except Exception as exc:
+        failed_at = time.perf_counter()
+        return {
+            "ok": False,
+            "latency_ms": round((failed_at - started) * 1000),
+            "startup_ms": round((failed_at - started) * 1000),
+            "request_ms": None,
+            "detail": str(exc),
+        }
+    finally:
+        if process is not None:
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), 3)

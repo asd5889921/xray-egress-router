@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -18,6 +19,7 @@ from l2tp_multi_egress.settings import Settings
 from l2tp_multi_egress.ss_uri import parse_ss_uri
 from l2tp_multi_egress.storage import StateStore
 from l2tp_multi_egress.transaction import TransactionManager
+from l2tp_multi_egress.status import test_egress
 from l2tp_multi_egress.xray import XrayManager, build_config
 
 
@@ -128,6 +130,36 @@ def test_dynamic_handler_payloads_are_removed_after_apply(tmp_path):
 
     assert not list(cfg.run_dir.glob("xrer-*.json"))
     assert not list(cfg.run_dir.glob("restore-xrer-*.json"))
+
+
+def test_egress_probe_returns_a_structured_error_after_generating_config(tmp_path, monkeypatch):
+    cfg = Settings(tmp_path / "etc", tmp_path / "run", Path("xray"), "127.0.0.1:10085", False, "127.0.0.1", 17890, 60)
+    egress = sample_state().egresses[0]
+    observed = {}
+
+    class FakeProcess:
+        returncode = None
+
+        def terminate(self):
+            pass
+
+        async def wait(self):
+            return 0
+
+    async def fake_start(*args, **_kwargs):
+        observed["config"] = json.loads(Path(args[-1]).read_text(encoding="utf-8"))
+        return FakeProcess()
+
+    async def fake_open_connection(*_args, **_kwargs):
+        raise OSError("synthetic connection failure")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_start)
+    monkeypatch.setattr(asyncio, "open_connection", fake_open_connection)
+    result = asyncio.run(test_egress(cfg, egress))
+
+    assert result["ok"] is False
+    assert result["detail"] == "synthetic connection failure"
+    assert observed["config"]["outbounds"][0]["protocol"] == "shadowsocks"
 
 
 def test_web_login_crud_and_confirmation(tmp_path):
