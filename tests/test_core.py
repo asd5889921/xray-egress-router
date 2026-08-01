@@ -19,7 +19,7 @@ from l2tp_multi_egress.settings import Settings
 from l2tp_multi_egress.ss_uri import parse_ss_uri
 from l2tp_multi_egress.storage import StateStore
 from l2tp_multi_egress.transaction import TransactionManager
-from l2tp_multi_egress.status import test_egress
+from l2tp_multi_egress.status import test_egress as run_egress_probe
 from l2tp_multi_egress.xray import XrayManager, build_config
 
 
@@ -155,7 +155,7 @@ def test_egress_probe_returns_a_structured_error_after_generating_config(tmp_pat
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_start)
     monkeypatch.setattr(asyncio, "open_connection", fake_open_connection)
-    result = asyncio.run(test_egress(cfg, egress))
+    result = asyncio.run(run_egress_probe(cfg, egress))
 
     assert result["ok"] is False
     assert result["detail"] == "synthetic connection failure"
