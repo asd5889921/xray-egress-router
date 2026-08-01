@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import secrets
 import time
@@ -21,6 +20,7 @@ from .ss_uri import parse_ss_uri
 from .status import SystemStatus, test_egress
 from .storage import StateStore
 from .transaction import TransactionManager
+from .traffic import KernelTraffic
 from .xray import XrayManager
 
 
@@ -55,21 +55,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     transactions = TransactionManager(settings)
     diagnostics = SourceDiagnostics(settings)
     ppp = PPPMonitor(settings, diagnostics)
+    traffic_monitor = KernelTraffic(settings)
     services = SystemStatus(settings)
     login_attempts: dict[str, deque[float]] = defaultdict(deque)
-
-    async def capture_loop() -> None:
-        while True:
-            await ppp.refresh_capture()
-            await asyncio.sleep(5)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         if not settings.dry_run:
             transactions.xray.require_version()
-        task = asyncio.create_task(capture_loop())
+        try:
+            traffic_monitor.apply(store.load())
+        except RuntimeError:
+            # Traffic observation is optional and must never block proxy service.
+            pass
         yield
-        task.cancel()
 
     app = FastAPI(title="xray-egress-router", version="0.1.0", lifespan=lifespan)
     static_path = files("l2tp_multi_egress").joinpath("static")
@@ -307,7 +306,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/traffic")
     async def traffic(_: dict = Depends(session)) -> list[dict]:
-        return ppp.live_traffic(store.load())
+        try:
+            return traffic_monitor.rows(store.load())
+        except RuntimeError as exc:
+            raise HTTPException(503, f"实时统计不可用: {exc}") from exc
 
     @app.get("/api/system")
     async def system_status(_: dict = Depends(session)) -> dict:

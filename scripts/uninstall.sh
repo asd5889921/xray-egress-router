@@ -34,6 +34,7 @@ while iptables -t mangle -C PREROUTING -i ppp+ -j XRER_TPROXY 2>/dev/null; do
 done
 iptables -t mangle -F XRER_TPROXY 2>/dev/null || true
 iptables -t mangle -X XRER_TPROXY 2>/dev/null || true
+nft delete table inet xrer_traffic 2>/dev/null || true
 ip rule del priority 30000 fwmark 0x8000/0x8000 table 100 2>/dev/null || true
 ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null || true
 

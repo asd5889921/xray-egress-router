@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from l2tp_multi_egress import ppp_event, watchdog
-from l2tp_multi_egress.diagnostics import PPPMonitor, SourceDiagnostics
+from l2tp_multi_egress.diagnostics import SourceDiagnostics
 from l2tp_multi_egress.main import create_app
 from l2tp_multi_egress.models import AppState, Binding, Egress, ProxyType
 from l2tp_multi_egress.network import iptables_restore_script
@@ -19,6 +19,7 @@ from l2tp_multi_egress.settings import Settings
 from l2tp_multi_egress.ss_uri import parse_ss_uri
 from l2tp_multi_egress.storage import StateStore
 from l2tp_multi_egress.transaction import TransactionManager
+from l2tp_multi_egress.traffic import KernelTraffic
 from l2tp_multi_egress.status import test_egress as run_egress_probe
 from l2tp_multi_egress.xray import XrayManager, build_config
 
@@ -89,20 +90,29 @@ def test_source_diagnostics_keeps_only_private_ipv4(tmp_path):
     assert "NAT模式" in report["warning"]
 
 
-def test_live_traffic_maps_active_private_ips_to_egress(tmp_path):
+def test_kernel_traffic_maps_nft_counters_to_egress(tmp_path, monkeypatch):
     cfg = settings(tmp_path)
-    diagnostics = SourceDiagnostics(cfg)
-    monitor = PPPMonitor(cfg, diagnostics)
+    cfg = Settings(cfg.config_dir, cfg.run_dir, cfg.xray_binary, cfg.xray_api, False, cfg.listen_host, cfg.listen_port, cfg.rollback_seconds)
+    traffic = KernelTraffic(cfg)
     started = time.time()
-    diagnostics.record_traffic("192.168.1.10", "8.8.8.8", 2_000, timestamp=started)
-    diagnostics.record_traffic("8.8.8.8", "192.168.1.10", 4_000, timestamp=started)
-    first = monitor.live_traffic(sample_state())
+    snapshots = iter([
+        {"upstream": {"192.168.1.10": 2_000}, "downstream": {"192.168.1.10": 4_000}},
+        {"upstream": {"192.168.1.10": 3_000}, "downstream": {"192.168.1.10": 7_000}},
+    ])
+    current = next(snapshots)
+    monkeypatch.setattr(traffic, "_set_counters", lambda name: current[name])
+    first = traffic.rows(sample_state(), timestamp=started)
     assert first[0]["egress"] == {"id": "hk", "name": "Hong Kong", "type": "shadowsocks"}
     assert first[0]["upstream_bps"] == 0
-    diagnostics.record_traffic("192.168.1.10", "8.8.8.8", 1_000, timestamp=started + 2)
-    diagnostics.record_traffic("8.8.8.8", "192.168.1.10", 3_000, timestamp=started + 2)
-    second = diagnostics.traffic_rates(timestamp=started + 2)
-    assert second == [{"source_ip": "192.168.1.10", "upstream_bps": 500, "downstream_bps": 1500}]
+    current = next(snapshots)
+    second = traffic.rows(sample_state(), timestamp=started + 2)
+    assert (second[0]["upstream_bps"], second[0]["downstream_bps"]) == (500, 1500)
+
+
+def test_kernel_traffic_rules_use_only_counter_updates(tmp_path):
+    script = KernelTraffic(settings(tmp_path))._base_script()
+    assert "counter" in script
+    assert "tproxy" not in script.lower() and "nat" not in script.lower()
 
 
 def test_transaction_apply_confirm_and_rollback(tmp_path):

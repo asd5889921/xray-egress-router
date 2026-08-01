@@ -80,7 +80,7 @@ L2TP_DNS="$(awk '/^[[:space:]]*ms-dns[[:space:]]+/{if (value) value=value ", "; 
 echo "第二步：安装 xray-egress-router。"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y git python3 python3-venv python3-pip iproute2 iptables curl
+apt-get install -y git python3 python3-venv python3-pip iproute2 iptables nftables curl
 if [[ -d "$APP_DIR/.git" ]]; then
   git -C "$APP_DIR" fetch origin "$BRANCH"
   git -C "$APP_DIR" reset --hard "origin/$BRANCH"

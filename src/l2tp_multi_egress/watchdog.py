@@ -8,6 +8,7 @@ from .network import NetworkManager
 from .settings import Settings
 from .storage import StateStore, exclusive_lock
 from .transaction import TransactionManager
+from .traffic import KernelTraffic
 
 
 RECONCILE_INTERVAL_SECONDS = 30
@@ -15,7 +16,9 @@ RECONCILE_INTERVAL_SECONDS = 30
 
 def reconcile_network(settings: Settings) -> None:
     with exclusive_lock(settings.lock_file):
-        NetworkManager(settings).apply(StateStore(settings).load())
+        state = StateStore(settings).load()
+        NetworkManager(settings).apply(state)
+        KernelTraffic(settings).apply(state)
 
 
 def run() -> None:
@@ -43,4 +46,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

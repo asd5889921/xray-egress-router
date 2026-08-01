@@ -8,6 +8,7 @@ from .models import AppState, Transaction, utcnow
 from .network import NetworkManager
 from .settings import Settings
 from .storage import StateStore, atomic_write, exclusive_lock
+from .traffic import KernelTraffic
 from .xray import XrayManager
 
 
@@ -47,6 +48,7 @@ class TransactionManager:
                 else:
                     self.xray.apply_dynamic(previous, candidate)
                 self.network.apply(candidate)
+                KernelTraffic(self.settings).apply(candidate)
                 self.store.save(candidate)
                 self.xray.write_config(candidate)
             except Exception:
@@ -56,6 +58,7 @@ class TransactionManager:
                     else:
                         self.xray.apply_dynamic(candidate, previous)
                     self.network.apply(previous)
+                    KernelTraffic(self.settings).apply(previous)
                     self.store.save(previous)
                     self.xray.write_config(previous)
                 finally:
@@ -84,6 +87,7 @@ class TransactionManager:
             else:
                 self.xray.apply_dynamic(current, previous)
             self.network.apply(previous)
+            KernelTraffic(self.settings).apply(previous)
             self.store.save(previous)
             self.xray.write_config(previous)
             self.settings.pending_file.unlink(missing_ok=True)
