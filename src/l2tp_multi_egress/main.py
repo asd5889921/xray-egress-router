@@ -305,6 +305,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def connections(_: dict = Depends(session)) -> list[dict]:
         return ppp.connections()
 
+    @app.get("/api/traffic")
+    async def traffic(_: dict = Depends(session)) -> list[dict]:
+        return ppp.live_traffic(store.load())
+
     @app.get("/api/system")
     async def system_status(_: dict = Depends(session)) -> dict:
         return services.all()

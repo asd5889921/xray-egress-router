@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from l2tp_multi_egress import ppp_event, watchdog
-from l2tp_multi_egress.diagnostics import SourceDiagnostics
+from l2tp_multi_egress.diagnostics import PPPMonitor, SourceDiagnostics
 from l2tp_multi_egress.main import create_app
 from l2tp_multi_egress.models import AppState, Binding, Egress, ProxyType
 from l2tp_multi_egress.network import iptables_restore_script
@@ -87,6 +87,22 @@ def test_source_diagnostics_keeps_only_private_ipv4(tmp_path):
     assert report["sample_count"] == 1
     assert report["sources"] == {"192.168.17.100": 1}
     assert "NAT模式" in report["warning"]
+
+
+def test_live_traffic_maps_active_private_ips_to_egress(tmp_path):
+    cfg = settings(tmp_path)
+    diagnostics = SourceDiagnostics(cfg)
+    monitor = PPPMonitor(cfg, diagnostics)
+    started = time.time()
+    diagnostics.record_traffic("192.168.1.10", "8.8.8.8", 2_000, timestamp=started)
+    diagnostics.record_traffic("8.8.8.8", "192.168.1.10", 4_000, timestamp=started)
+    first = monitor.live_traffic(sample_state())
+    assert first[0]["egress"] == {"id": "hk", "name": "Hong Kong", "type": "shadowsocks"}
+    assert first[0]["upstream_bps"] == 0
+    diagnostics.record_traffic("192.168.1.10", "8.8.8.8", 1_000, timestamp=started + 2)
+    diagnostics.record_traffic("8.8.8.8", "192.168.1.10", 3_000, timestamp=started + 2)
+    second = diagnostics.traffic_rates(timestamp=started + 2)
+    assert second == [{"source_ip": "192.168.1.10", "upstream_bps": 500, "downstream_bps": 1500}]
 
 
 def test_transaction_apply_confirm_and_rollback(tmp_path):
@@ -266,6 +282,7 @@ def test_management_routes_include_all_mutating_ui_actions(tmp_path):
         ("/api/transactions/{transaction_id}/confirm", "POST"),
         ("/api/transactions/{transaction_id}/rollback", "POST"),
         ("/api/connections", "GET"),
+        ("/api/traffic", "GET"),
         ("/api/system", "GET"),
         ("/api/system/{name}/restart", "POST"),
         ("/api/parse-ss", "POST"),
