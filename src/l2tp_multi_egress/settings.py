@@ -28,7 +28,18 @@ class Settings:
             import json
             preferences = json.loads((config_dir / "preferences.json").read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
-            pass
+            # preferences.json 不存在时使用默认值:日志保留天数 0(不写文件)、
+            # Xray 日志仅错误。避免 watchdog 因缺失配置而写日志文件。
+            try:
+                import json
+                config_dir.mkdir(parents=True, exist_ok=True)
+                defaults = {"xray_log_level": "error", "log_retention_days": 0}
+                (config_dir / "preferences.json").write_text(
+                    json.dumps(defaults, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                )
+                preferences = defaults
+            except OSError:
+                pass
         return cls(
             config_dir=config_dir,
             run_dir=Path(os.getenv("XRER_RUN_DIR", "/run/xray-egress-router")),

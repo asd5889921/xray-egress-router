@@ -146,7 +146,10 @@ cat > /etc/systemd/system/xrer-web.service <<EOF
 [Unit]
 Description=xray-egress-router Web
 After=xrer-xray.service xl2tpd.service
-Requires=xrer-xray.service
+# 注意:不能使用 Requires=xrer-xray.service!
+# 一旦 Requires,web 内执行 "systemctl restart xrer-xray" 会连带重启 web 自身,
+# 导致 web 自杀、"重启 xray 失败"。Wants 只保证启动顺序,不绑定生命周期。
+Wants=xrer-xray.service
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
@@ -185,6 +188,19 @@ systemctl enable xrer-xray xrer-watchdog xrer-web
 # --now does not restart an already-running unit.  Updates must restart the
 # processes so they load the freshly installed Python package and static UI.
 systemctl restart xrer-xray xrer-watchdog xrer-web
+
+# 限制 journal 日志大小,避免小硬盘 VPS 被日志写满(默认无上限)。
+# 同时过滤掉 xray 的 accepted 连接日志(默认 error 级别也会进 journal)。
+if ! grep -q '^SystemMaxUse=' /etc/systemd/journald.conf; then
+  printf '\nSystemMaxUse=300M\n' >> /etc/systemd/journald.conf
+fi
+if [[ -d /etc/systemd/journald.conf.d ]]; then
+  cat > /etc/systemd/journald.conf.d/99-xrer.conf <<'EOF'
+[Journal]
+SystemMaxUse=300M
+EOF
+fi
+systemctl restart systemd-journald 2>/dev/null || true
 SERVER_IP="$(curl --connect-timeout 5 -fsS https://api.ipify.org 2>/dev/null || true)"
 [[ -n "$SERVER_IP" ]] || SERVER_IP="$(hostname -I | awk '{print $1}')"
 SUMMARY_FILE=/root/xrer-install-summary.txt

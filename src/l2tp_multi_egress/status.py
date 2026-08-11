@@ -41,6 +41,12 @@ class SystemStatus:
         result = subprocess.run(["systemctl", "restart", unit], text=True, capture_output=True, timeout=30, check=False)
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or f"重启 {name} 失败")
+        # 等待 systemd 完成重启,再确认服务真正 active。
+        # 避免 systemctl restart 返回 0 但服务随后崩溃/处于 activating 的假成功。
+        time.sleep(1.0)
+        status = self.service(name)
+        if status != "active":
+            raise RuntimeError(f"重启 {name} 后状态为 {status}，请查看日志")
 
 
 async def test_egress(settings: Settings, egress: Egress) -> dict:
